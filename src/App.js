@@ -41,6 +41,8 @@ const translations = {
 };
 
 export default function App() {
+  const tg = window.Telegram?.WebApp; // Получаем доступ к данным TG
+  const tgUser = tg?.initDataUnsafe?.user; // Данные пользователя
   const [lang, setLang] = useState('ru');
   const t = translations[lang] || translations.ru;
   const [role, setRole] = useState(null);
@@ -93,10 +95,21 @@ export default function App() {
     return () => clearInterval(interval);
   }, [pairId, step, role]);
 
+// Получаем данные из Telegram один раз в начале компонента
+  const tg = window.Telegram?.WebApp;
+  const tgUser = tg?.initDataUnsafe?.user;
+
   const handleStartServer = async () => {
     if (!userName.trim()) return;
     const id = Math.random().toString(36).substring(2, 8).toUpperCase();
-    await supabase.from('pairs').upsert([{ pair_id: id, senior_name: userName.toUpperCase() }]);
+    
+    // В upsert теперь добавляем senior_chat_id
+    await supabase.from('pairs').upsert([{ 
+      pair_id: id, 
+      senior_name: userName.toUpperCase(),
+      senior_chat_id: tgUser?.id || null 
+    }]);
+
     localStorage.setItem('pairId', id); localStorage.setItem('role', 'server');
     setPairId(id); setRole('server'); setStep('work');
   };
@@ -104,8 +117,12 @@ export default function App() {
   const handleConnectClient = async () => {
     const code = inputCode.trim().toUpperCase();
     if (!code) return;
+
+    // В update добавляем сохранение ID для того, кто подключается
     const { data } = await supabase.from('pairs').update({ 
-      ...(role === 'client' ? { relative_name: userName.toUpperCase(), is_connected: true } : { senior_name: userName.toUpperCase() }) 
+      ...(role === 'client' 
+          ? { relative_name: userName.toUpperCase(), is_connected: true, relative_chat_id: tgUser?.id } 
+          : { senior_name: userName.toUpperCase(), senior_chat_id: tgUser?.id }) 
     }).eq('pair_id', code).select();
     
     if (data?.length > 0) {
