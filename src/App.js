@@ -191,9 +191,30 @@ export default function App() {
           <div style={{fontSize: '32px', fontWeight: 'bold', letterSpacing: '6px', color: '#1A237E', margin: '15px 0'}}>{pairId}</div>
           <button style={{backgroundColor: '#1565C0', color: 'white', padding: '10px', borderRadius: '10px', border: 'none', width: '65%', marginBottom: '20px', cursor: 'pointer', fontWeight: 'bold'}} onClick={copyToClipboard}>{t.copy}</button>
           
-          <button style={{...s.bigBtn, backgroundColor: '#4CAF50'}} onClick={() => supabase.from('pairs').update({last_message_text: t.well, last_message_time: new Date().toISOString()}).eq('pair_id', pairId)}>{t.well}</button>
-          <button style={{...s.bigBtn, backgroundColor: '#FF9800'}} onClick={() => supabase.from('pairs').update({last_message_text: t.unwell, last_message_time: new Date().toISOString()}).eq('pair_id', pairId)}>{t.unwell}</button>
-          <button style={{...s.bigBtn, backgroundColor: '#F44336'}} onClick={() => supabase.from('pairs').update({last_message_text: t.sos, last_message_time: new Date().toISOString()}).eq('pair_id', pairId)}>{t.sos}</button>
+<button style={{...s.bigBtn, backgroundColor: '#4CAF50'}} onClick={() => 
+  supabase.from('pairs').update({
+    last_message_text: t.well, 
+    last_message_time: new Date().toISOString(),
+    // Добавляем эти строки, чтобы ID сохранился при нажатии кнопки:
+    ...(role === 'server' ? { senior_chat_id: tgUser?.id } : { relative_chat_id: tgUser?.id })
+  }).eq('pair_id', pairId)
+}>{t.well}</button>
+
+<button style={{...s.bigBtn, backgroundColor: '#FF9800'}} onClick={() => 
+  supabase.from('pairs').update({
+    last_message_text: t.unwell, 
+    last_message_time: new Date().toISOString(),
+    ...(role === 'server' ? { senior_chat_id: tgUser?.id } : { relative_chat_id: tgUser?.id })
+  }).eq('pair_id', pairId)
+}>{t.unwell}</button>
+
+<button style={{...s.bigBtn, backgroundColor: '#F44336'}} onClick={() => 
+  supabase.from('pairs').update({
+    last_message_text: t.sos, 
+    last_message_time: new Date().toISOString(),
+    ...(role === 'server' ? { senior_chat_id: tgUser?.id } : { relative_chat_id: tgUser?.id })
+  }).eq('pair_id', pairId)
+}>{t.sos}</button>
           
           {lastData.time && <p style={{marginTop: '15px', color: '#4E5754', fontWeight: 'bold'}}>{t.sentAt} {new Date(lastData.time).toLocaleString()}</p>}
         </div>
