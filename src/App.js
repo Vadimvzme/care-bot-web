@@ -160,7 +160,7 @@ export default function App() {
     title: { fontSize: '26px', fontWeight: 'bold', margin: '30px 0', color: '#333', textAlign: 'center' },
     input: { width: '100%', padding: '15px', marginBottom: '15px', borderRadius: '10px', border: '1px solid #ccc', textAlign: 'center', fontSize: '16px', textTransform: 'uppercase', boxSizing: 'border-box' },
     bigBtn: { width: '100%', padding: '30px', borderRadius: '25px', margin: '8px 0', border: 'none', color: 'white', fontSize: '18px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' },
-    card: { margin: '30px 0', backgroundColor: 'white', padding: '35px', borderRadius: '30px', width: '100%', textAlign: 'center', boxShadow: '0 8px 15px rgba(0,0,0,0.1)', boxSizing: 'border-box' }
+    card: { backgroundColor: 'white', padding: '35px', borderRadius: '30px', width: '100%', textAlign: 'center', boxShadow: '0 8px 15px rgba(0,0,0,0.1)', boxSizing: 'border-box' }
   };
 
   // --- 7. ЭКРАНЫ ---
@@ -188,8 +188,10 @@ export default function App() {
   return (
     <div style={s.container}>
       <div style={{width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#2E7D32', fontWeight: 'bold'}}>
-        <span>{partnerName ? `${t.connStatus} ${partnerName}` : t.waiting}</span>
-        <span style={{fontSize: '20px', cursor: 'pointer'}} onClick={() => setShowSettings(true)}>⚙️</span>
+        <span style={{ fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginRight: '10px' }}>
+  {partnerName ? `${t.connStatus} ${partnerName}` : t.waiting}
+</span>
+        <span style={{fontSize: '24px', cursor: 'pointer'}} onClick={() => setShowSettings(true)}>⚙️</span>
       </div>
 
       {role === 'server' ? (
@@ -204,14 +206,14 @@ export default function App() {
           
           {lastData.time && <p style={{marginTop: '15px', color: '#4E5754', fontWeight: 'bold'}}>{t.sentAt} {new Date(lastData.time).toLocaleString()}</p>}
         </div>
-      ) : (
-        <div style={s.card}>
-          <p style={{color: '#666'}}>{t.receivedAt}</p>
-          <p style={{fontSize: '18px', fontWeight: 'bold', margin: '20px 0'}}>[{lastData.text}]</p>
-          <p style={{fontSize: '14px', color: '#666'}}>{t.timerLabel}</p>
-          <div style={{fontSize: '44px', color: '#D32F2F', fontWeight: 'bold'}}>{timeDiff}</div>
-        </div>
-      )}
+) : (
+  <div style={{ ...s.card, marginTop: '20%' }}> {/* Добавили смещение вниз на 20% */}
+    <p style={{ color: '#666' }}>{t.receivedAt}</p>
+    <p style={{ fontSize: '18px', fontWeight: 'bold', margin: '20px 0' }}>[{lastData.text}]</p>
+    <p style={{ fontSize: '14px', color: '#666' }}>{t.timerLabel}</p>
+    <div style={{ fontSize: '44px', color: '#D32F2F', fontWeight: 'bold' }}>{timeDiff}</div>
+  </div>
+)}
 
       {showSettings && (
         <div style={{position: 'fixed', top:0, left:0, width:'100%', height:'100%', backgroundColor:'#F0F2F5', zIndex:1000, display:'flex', flexDirection:'column', alignItems:'center', padding:'20px', boxSizing:'border-box'}}>
