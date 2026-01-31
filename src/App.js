@@ -27,7 +27,7 @@ const translations = {
     choice: "WHO ARE YOU?", senior: "I AM SENIOR", relative: "I AM RELATIVE",
     reg: "REGISTRATION", restore: "RESTORE", name: "YOUR NAME", code: "CONNECTION CODE",
     continue: "CREATE CODE", enter: "ENTER", back: "BACK",
-    connStatus: "✅ CONNECTED WITH", waiting: "⏳ WAITING...",
+    connStatus: "✅ CONNECTED WITH", waiting: "WAITING...",
     idLabel: "ID FOR RELATIVE:", copy: "COPY ID",
     sentAt: "SENT AT:", receivedAt: "RECEIVED AT:",
     timerLabel: "TIME ELAPSED:", settings: "SETTINGS", lang: "LANGUAGE",
@@ -41,8 +41,19 @@ const translations = {
 };
 
 export default function App() {
-  const tg = window.Telegram?.WebApp; // Получаем доступ к данным TG
-  const tgUser = tg?.initDataUnsafe?.user; // Данные пользователя
+  // --- 1. ТЕЛЕГРАМ ДАННЫЕ ---
+  const [tgUser, setTgUser] = useState(null);
+
+  useEffect(() => {
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+      tg.ready(); // Сообщаем TG, что приложение загружено
+      tg.expand(); // Разворачиваем на весь экран
+      setTgUser(tg.initDataUnsafe?.user);
+    }
+  }, []);
+
+  // --- 2. СОСТОЯНИЯ ---
   const [lang, setLang] = useState('ru');
   const t = translations[lang] || translations.ru;
   const [role, setRole] = useState(null);
@@ -58,6 +69,7 @@ export default function App() {
   const [lastData, setLastData] = useState({ text: '—', time: null });
   const [timeDiff, setTimeDiff] = useState('0д 0ч 0м');
 
+  // --- 3. ЗАГРУЗКА ИЗ ХРАНИЛИЩА ---
   useEffect(() => {
     const sLang = localStorage.getItem('lang');
     const sCheck = localStorage.getItem('checkHour');
@@ -73,6 +85,7 @@ export default function App() {
     }
   }, []);
 
+  // --- 4. ОБНОВЛЕНИЕ ДАННЫХ ---
   useEffect(() => {
     let interval;
     if (pairId && step === 'work') {
@@ -95,15 +108,11 @@ export default function App() {
     return () => clearInterval(interval);
   }, [pairId, step, role]);
 
-// Получаем данные из Telegram один раз в начале компонента
-  const tg = window.Telegram?.WebApp;
-  const tgUser = tg?.initDataUnsafe?.user;
-
+  // --- 5. ФУНКЦИИ РЕГИСТРАЦИИ ---
   const handleStartServer = async () => {
     if (!userName.trim()) return;
     const id = Math.random().toString(36).substring(2, 8).toUpperCase();
     
-    // В upsert теперь добавляем senior_chat_id
     await supabase.from('pairs').upsert([{ 
       pair_id: id, 
       senior_name: userName.toUpperCase(),
@@ -118,7 +127,6 @@ export default function App() {
     const code = inputCode.trim().toUpperCase();
     if (!code) return;
 
-    // В update добавляем сохранение ID для того, кто подключается
     const { data } = await supabase.from('pairs').update({ 
       ...(role === 'client' 
           ? { relative_name: userName.toUpperCase(), is_connected: true, relative_chat_id: tgUser?.id } 
@@ -136,6 +144,7 @@ export default function App() {
     alert(t.copySuccess);
   };
 
+  // --- 6. СТИЛИ ---
   const s = {
     container: { fontFamily: 'sans-serif', padding: '20px', backgroundColor: '#F8F9FA', minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', boxSizing: 'border-box' },
     title: { fontSize: '26px', fontWeight: 'bold', margin: '30px 0', color: '#333', textAlign: 'center' },
@@ -144,8 +153,12 @@ export default function App() {
     card: { backgroundColor: 'white', padding: '35px', borderRadius: '30px', width: '100%', textAlign: 'center', boxShadow: '0 8px 15px rgba(0,0,0,0.1)', boxSizing: 'border-box' }
   };
 
+  // --- 7. ЭКРАНЫ ---
   if (step === 'choice') return (
     <div style={s.container}>
+      {/* ДИАГНОСТИКА: Удали эту строку ниже, когда увидишь цифры */}
+      <div style={{fontSize:'10px', color:'red'}}>DEBUG ID: {tgUser?.id || "NOT_FOUND"}</div>
+      
       <h2 style={s.title}>{t.choice}</h2>
       <button style={{...s.bigBtn, backgroundColor: '#4CAF50'}} onClick={() => {setRole('server'); setStep('reg')}}>{t.senior}</button>
       <button style={{...s.bigBtn, backgroundColor: '#2196F3'}} onClick={() => {setRole('client'); setStep('reg')}}>{t.relative}</button>
