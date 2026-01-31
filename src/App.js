@@ -47,8 +47,8 @@ export default function App() {
   useEffect(() => {
     const tg = window.Telegram?.WebApp;
     if (tg) {
-      tg.ready(); // Сообщаем TG, что приложение загружено
-      tg.expand(); // Разворачиваем на весь экран
+      tg.ready();
+      tg.expand();
       setTgUser(tg.initDataUnsafe?.user);
     }
   }, []);
@@ -85,40 +85,38 @@ export default function App() {
     }
   }, []);
 
-  // --- 4. ОБНОВЛЕНИЕ ДАННЫХ ---
+  // --- 4. ОБНОВЛЕНИЕ ДАННЫХ И ТАЙМЕРА ---
   useEffect(() => {
     let interval;
     if (pairId && step === 'work') {
       const refresh = async () => {
-        const { data } = await supabase.from('pairs').select('*').eq('pair_id', pairId);
-        if (data?.[0]) {
-          const res = data[0];
-          setPartnerName(role === 'client' ? res.senior_name : res.relative_name);
-          setLastData({ text: res.last_message_text || '—', time: res.last_message_time });
-          if (res.last_message_time) {
-            const diff = new Date() - new Date(res.last_message_time);
+        const { data } = await supabase.from('pairs').select('*').eq('pair_id', pairId).single();
+        if (data) {
+          setPartnerName(role === 'client' ? data.senior_name : data.relative_name);
+          setLastData({ text: data.last_message_text || '—', time: data.last_message_time });
+          
+          if (data.last_message_time) {
+            const diff = new Date() - new Date(data.last_message_time);
             const d = Math.floor(diff/86400000), h = Math.floor((diff%86400000)/3600000), m = Math.floor((diff%3600000)/60000);
             setTimeDiff(`${d}д ${h}ч ${m}м`);
           }
         }
       };
       refresh();
-      interval = setInterval(refresh, 15000);
+      interval = setInterval(refresh, 5000); // Обновляем каждые 5 секунд для точности
     }
     return () => clearInterval(interval);
   }, [pairId, step, role]);
 
-  // --- 5. ФУНКЦИИ РЕГИСТРАЦИИ ---
+  // --- 5. ФУНКЦИИ РЕГИСТРАЦИИ И ОТПРАВКИ ---
   const handleStartServer = async () => {
     if (!userName.trim()) return;
     const id = Math.random().toString(36).substring(2, 8).toUpperCase();
-    
     await supabase.from('pairs').upsert([{ 
       pair_id: id, 
       senior_name: userName.toUpperCase(),
       senior_chat_id: tgUser?.id || null 
     }]);
-
     localStorage.setItem('pairId', id); localStorage.setItem('role', 'server');
     setPairId(id); setRole('server'); setStep('work');
   };
@@ -126,7 +124,6 @@ export default function App() {
   const handleConnectClient = async () => {
     const code = inputCode.trim().toUpperCase();
     if (!code) return;
-
     const { data } = await supabase.from('pairs').update({ 
       ...(role === 'client' 
           ? { relative_name: userName.toUpperCase(), is_connected: true, relative_chat_id: tgUser?.id } 
@@ -137,6 +134,19 @@ export default function App() {
       localStorage.setItem('pairId', code); localStorage.setItem('role', role);
       setPairId(code); setStep('work');
     } else { alert(lang === 'ru' ? "ID не найден" : "ID not found"); }
+  };
+
+  const handleSendMessage = async (text) => {
+    const now = new Date().toISOString();
+    const { error } = await supabase.from('pairs').update({
+      last_message_text: text,
+      last_message_time: now,
+      ...(role === 'server' ? { senior_chat_id: tgUser?.id } : { relative_chat_id: tgUser?.id })
+    }).eq('pair_id', pairId);
+
+    if (!error) {
+      setLastData({ text: text, time: now }); // Мгновенное обновление на экране
+    }
   };
 
   const copyToClipboard = () => {
@@ -156,9 +166,6 @@ export default function App() {
   // --- 7. ЭКРАНЫ ---
   if (step === 'choice') return (
     <div style={s.container}>
-      {/* ДИАГНОСТИКА: Удали эту строку ниже, когда увидишь цифры */}
-      <div style={{fontSize:'10px', color:'red'}}>DEBUG ID: {tgUser?.id || "NOT_FOUND"}</div>
-      
       <h2 style={s.title}>{t.choice}</h2>
       <button style={{...s.bigBtn, backgroundColor: '#4CAF50'}} onClick={() => {setRole('server'); setStep('reg')}}>{t.senior}</button>
       <button style={{...s.bigBtn, backgroundColor: '#2196F3'}} onClick={() => {setRole('client'); setStep('reg')}}>{t.relative}</button>
@@ -191,30 +198,9 @@ export default function App() {
           <div style={{fontSize: '32px', fontWeight: 'bold', letterSpacing: '6px', color: '#1A237E', margin: '15px 0'}}>{pairId}</div>
           <button style={{backgroundColor: '#1565C0', color: 'white', padding: '10px', borderRadius: '10px', border: 'none', width: '65%', marginBottom: '20px', cursor: 'pointer', fontWeight: 'bold'}} onClick={copyToClipboard}>{t.copy}</button>
           
-<button style={{...s.bigBtn, backgroundColor: '#4CAF50'}} onClick={() => 
-  supabase.from('pairs').update({
-    last_message_text: t.well, 
-    last_message_time: new Date().toISOString(),
-    // Добавляем эти строки, чтобы ID сохранился при нажатии кнопки:
-    ...(role === 'server' ? { senior_chat_id: tgUser?.id } : { relative_chat_id: tgUser?.id })
-  }).eq('pair_id', pairId)
-}>{t.well}</button>
-
-<button style={{...s.bigBtn, backgroundColor: '#FF9800'}} onClick={() => 
-  supabase.from('pairs').update({
-    last_message_text: t.unwell, 
-    last_message_time: new Date().toISOString(),
-    ...(role === 'server' ? { senior_chat_id: tgUser?.id } : { relative_chat_id: tgUser?.id })
-  }).eq('pair_id', pairId)
-}>{t.unwell}</button>
-
-<button style={{...s.bigBtn, backgroundColor: '#F44336'}} onClick={() => 
-  supabase.from('pairs').update({
-    last_message_text: t.sos, 
-    last_message_time: new Date().toISOString(),
-    ...(role === 'server' ? { senior_chat_id: tgUser?.id } : { relative_chat_id: tgUser?.id })
-  }).eq('pair_id', pairId)
-}>{t.sos}</button>
+          <button style={{...s.bigBtn, backgroundColor: '#4CAF50'}} onClick={() => handleSendMessage(t.well)}>{t.well}</button>
+          <button style={{...s.bigBtn, backgroundColor: '#FF9800'}} onClick={() => handleSendMessage(t.unwell)}>{t.unwell}</button>
+          <button style={{...s.bigBtn, backgroundColor: '#F44336'}} onClick={() => handleSendMessage(t.sos)}>{t.sos}</button>
           
           {lastData.time && <p style={{marginTop: '15px', color: '#4E5754', fontWeight: 'bold'}}>{t.sentAt} {new Date(lastData.time).toLocaleString()}</p>}
         </div>
@@ -231,27 +217,15 @@ export default function App() {
         <div style={{position: 'fixed', top:0, left:0, width:'100%', height:'100%', backgroundColor:'#F0F2F5', zIndex:1000, display:'flex', flexDirection:'column', alignItems:'center', padding:'20px', boxSizing:'border-box'}}>
           <h2 style={s.title}>{t.settings}</h2>
           <div style={{display:'flex', marginBottom: '20px'}}>
-            <button 
-              onClick={() => setLang('ru')} 
-              style={{
-                padding:'12px', border:'2px solid', borderRadius:'12px', margin:'0 10px', cursor: 'pointer',
-                borderColor: lang === 'ru' ? '#4CAF50' : '#DEE2E6', backgroundColor: 'white'
-              }}
-            >RU</button>
-            <button 
-              onClick={() => setLang('en')} 
-              style={{
-                padding:'12px', border:'2px solid', borderRadius:'12px', margin:'0 10px', cursor: 'pointer',
-                borderColor: lang === 'en' ? '#4CAF50' : '#DEE2E6', backgroundColor: 'white'
-              }}
-            >EN</button>
+            <button onClick={() => setLang('ru')} style={{padding:'12px', border:'2px solid', borderRadius:'12px', margin:'0 10px', borderColor: lang === 'ru' ? '#4CAF50' : '#DEE2E6', backgroundColor: 'white'}}>RU</button>
+            <button onClick={() => setLang('en')} style={{padding:'12px', border:'2px solid', borderRadius:'12px', margin:'0 10px', borderColor: lang === 'en' ? '#4CAF50' : '#DEE2E6', backgroundColor: 'white'}}>EN</button>
           </div>
           <p style={{color: '#666'}}>{role === 'server' ? t.checkHour : t.waitHours}:</p>
           <input style={s.input} type="number" value={role==='server'?checkHour:waitHours} onChange={e => role==='server'?setCheckHour(e.target.value):setWaitHours(e.target.value)} />
           <button style={{...s.bigBtn, backgroundColor: '#4CAF50'}} onClick={() => {
             localStorage.setItem('lang', lang); localStorage.setItem('checkHour', checkHour); localStorage.setItem('waitHours', waitHours); setShowSettings(false);
           }}>{t.save}</button>
-          <button style={{background:'none', border:'none', color:'#F44336', fontWeight:'bold', marginTop:'20px', cursor: 'pointer'}} onClick={() => {if(window.confirm(t.logout)) {localStorage.clear(); window.location.reload();}}}>{t.logout}</button>
+          <button style={{background:'none', border:'none', color:'#F44336', fontWeight:'bold', marginTop:'20px'}} onClick={() => {if(window.confirm(t.logout)) {localStorage.clear(); window.location.reload();}}}>{t.logout}</button>
           <p style={{marginTop: '20px', color: '#666', cursor: 'pointer'}} onClick={() => setShowSettings(false)}>{t.back}</p>
         </div>
       )}
