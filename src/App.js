@@ -160,7 +160,7 @@ export default function App() {
     title: { fontSize: '26px', fontWeight: 'bold', margin: '30px 0', color: '#333', textAlign: 'center' },
     input: { width: '100%', padding: '15px', marginBottom: '15px', borderRadius: '10px', border: '1px solid #ccc', textAlign: 'center', fontSize: '16px', textTransform: 'uppercase', boxSizing: 'border-box' },
     bigBtn: { width: '100%', padding: '30px', borderRadius: '25px', margin: '8px 0', border: 'none', color: 'white', fontSize: '18px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' },
-    card: { backgroundColor: 'white', padding: '35px', borderRadius: '30px', width: '100%', textAlign: 'center', boxShadow: '0 8px 15px rgba(0,0,0,0.1)', boxSizing: 'border-box' }
+    card: { margin: '30px 0', backgroundColor: 'white', padding: '35px', borderRadius: '30px', width: '100%', textAlign: 'center', boxShadow: '0 8px 15px rgba(0,0,0,0.1)', boxSizing: 'border-box' }
   };
 
   // --- 7. ЭКРАНЫ ---
@@ -189,7 +189,7 @@ export default function App() {
     <div style={s.container}>
       <div style={{width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#2E7D32', fontWeight: 'bold'}}>
         <span>{partnerName ? `${t.connStatus} ${partnerName}` : t.waiting}</span>
-        <span style={{fontSize: '24px', cursor: 'pointer'}} onClick={() => setShowSettings(true)}>⚙️</span>
+        <span style={{fontSize: '20px', cursor: 'pointer'}} onClick={() => setShowSettings(true)}>⚙️</span>
       </div>
 
       {role === 'server' ? (
