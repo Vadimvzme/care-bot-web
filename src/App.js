@@ -12,7 +12,7 @@ const translations = {
     choice: "КТО ВЫ?", senior: "Я — СТАРШИЙ", relative: "Я — РОДСТВЕННИК",
     reg: "РЕГИСТРАЦИЯ", restore: "ВОССТАНОВЛЕНИЕ", name: "ВАШЕ ИМЯ", code: "КОД СВЯЗИ",
     continue: "СОЗДАТЬ КОД", enter: "ВОЙТИ", back: "НАЗАД",
-    connStatus: "✅ СВЯЗЬ УСТАНОВЛЕНА С", waiting: "⏳ ОЖИДАНИЕ СВЯЗИ...",
+    connStatus: "✅ НА СВЯЗИ С", waiting: "⏳ ОЖИДАНИЕ...",
     idLabel: "ID ДЛЯ СВЯЗИ С РОДСТВЕННИКОМ:", copy: "КОПИРОВАТЬ ID",
     sentAt: "ОТПРАВЛЕНО:", receivedAt: "ПОЛУЧЕНО:",
     timerLabel: "ПРОШЛО ВРЕМЕНИ:", settings: "НАСТРОЙКИ", lang: "ЯЗЫК / LANGUAGE",
@@ -41,19 +41,12 @@ const translations = {
 };
 
 export default function App() {
-  // --- 1. ТЕЛЕГРАМ ДАННЫЕ ---
   const [tgUser, setTgUser] = useState(null);
-
   useEffect(() => {
     const tg = window.Telegram?.WebApp;
-    if (tg) {
-      tg.ready();
-      tg.expand();
-      setTgUser(tg.initDataUnsafe?.user);
-    }
+    if (tg) { tg.ready(); tg.expand(); setTgUser(tg.initDataUnsafe?.user); }
   }, []);
 
-  // --- 2. СОСТОЯНИЯ ---
   const [lang, setLang] = useState('ru');
   const t = translations[lang] || translations.ru;
   const [role, setRole] = useState(null);
@@ -69,23 +62,18 @@ export default function App() {
   const [lastData, setLastData] = useState({ text: '—', time: null });
   const [timeDiff, setTimeDiff] = useState('0д 0ч 0м');
 
-  // --- 3. ЗАГРУЗКА ИЗ ХРАНИЛИЩА ---
   useEffect(() => {
     const sLang = localStorage.getItem('lang');
     const sCheck = localStorage.getItem('checkHour');
     const sWait = localStorage.getItem('waitHours');
     const sPairId = localStorage.getItem('pairId');
     const sRole = localStorage.getItem('role');
-
     if (sLang) setLang(sLang);
     if (sCheck) setCheckHour(sCheck);
     if (sWait) setWaitHours(sWait);
-    if (sPairId && sRole) {
-      setPairId(sPairId); setRole(sRole); setStep('work');
-    }
+    if (sPairId && sRole) { setPairId(sPairId); setRole(sRole); setStep('work'); }
   }, []);
 
-  // --- 4. ОБНОВЛЕНИЕ ДАННЫХ И ТАЙМЕРА ---
   useEffect(() => {
     let interval;
     if (pairId && step === 'work') {
@@ -94,7 +82,6 @@ export default function App() {
         if (data) {
           setPartnerName(role === 'client' ? data.senior_name : data.relative_name);
           setLastData({ text: data.last_message_text || '—', time: data.last_message_time });
-          
           if (data.last_message_time) {
             const diff = new Date() - new Date(data.last_message_time);
             const d = Math.floor(diff/86400000), h = Math.floor((diff%86400000)/3600000), m = Math.floor((diff%3600000)/60000);
@@ -102,21 +89,15 @@ export default function App() {
           }
         }
       };
-      refresh();
-      interval = setInterval(refresh, 5000); // Обновляем каждые 5 секунд для точности
+      refresh(); interval = setInterval(refresh, 5000);
     }
     return () => clearInterval(interval);
   }, [pairId, step, role]);
 
-  // --- 5. ФУНКЦИИ РЕГИСТРАЦИИ И ОТПРАВКИ ---
   const handleStartServer = async () => {
     if (!userName.trim()) return;
     const id = Math.random().toString(36).substring(2, 8).toUpperCase();
-    await supabase.from('pairs').upsert([{ 
-      pair_id: id, 
-      senior_name: userName.toUpperCase(),
-      senior_chat_id: tgUser?.id || null 
-    }]);
+    await supabase.from('pairs').upsert([{ pair_id: id, senior_name: userName.toUpperCase(), senior_chat_id: tgUser?.id || null }]);
     localStorage.setItem('pairId', id); localStorage.setItem('role', 'server');
     setPairId(id); setRole('server'); setStep('work');
   };
@@ -125,11 +106,8 @@ export default function App() {
     const code = inputCode.trim().toUpperCase();
     if (!code) return;
     const { data } = await supabase.from('pairs').update({ 
-      ...(role === 'client' 
-          ? { relative_name: userName.toUpperCase(), is_connected: true, relative_chat_id: tgUser?.id } 
-          : { senior_name: userName.toUpperCase(), senior_chat_id: tgUser?.id }) 
+      ...(role === 'client' ? { relative_name: userName.toUpperCase(), is_connected: true, relative_chat_id: tgUser?.id } : { senior_name: userName.toUpperCase(), senior_chat_id: tgUser?.id }) 
     }).eq('pair_id', code).select();
-    
     if (data?.length > 0) {
       localStorage.setItem('pairId', code); localStorage.setItem('role', role);
       setPairId(code); setStep('work');
@@ -138,23 +116,15 @@ export default function App() {
 
   const handleSendMessage = async (text) => {
     const now = new Date().toISOString();
-    const { error } = await supabase.from('pairs').update({
-      last_message_text: text,
-      last_message_time: now,
+    await supabase.from('pairs').update({
+      last_message_text: text, last_message_time: now,
       ...(role === 'server' ? { senior_chat_id: tgUser?.id } : { relative_chat_id: tgUser?.id })
     }).eq('pair_id', pairId);
-
-    if (!error) {
-      setLastData({ text: text, time: now }); // Мгновенное обновление на экране
-    }
+    setLastData({ text: text, time: now });
   };
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(pairId);
-    alert(t.copySuccess);
-  };
+  const copyToClipboard = () => { navigator.clipboard.writeText(pairId); alert(t.copySuccess); };
 
-  // --- 6. СТИЛИ ---
   const s = {
     container: { fontFamily: 'sans-serif', padding: '20px', backgroundColor: '#F8F9FA', minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', boxSizing: 'border-box' },
     title: { fontSize: '26px', fontWeight: 'bold', margin: '30px 0', color: '#333', textAlign: 'center' },
@@ -163,7 +133,6 @@ export default function App() {
     card: { backgroundColor: 'white', padding: '35px', borderRadius: '30px', width: '100%', textAlign: 'center', boxShadow: '0 8px 15px rgba(0,0,0,0.1)', boxSizing: 'border-box' }
   };
 
-  // --- 7. ЭКРАНЫ ---
   if (step === 'choice') return (
     <div style={s.container}>
       <h2 style={s.title}>{t.choice}</h2>
@@ -188,9 +157,9 @@ export default function App() {
   return (
     <div style={s.container}>
       <div style={{width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#2E7D32', fontWeight: 'bold'}}>
-        <span style={{ fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginRight: '10px' }}>
-  {partnerName ? `${t.connStatus} ${partnerName}` : t.waiting}
-</span>
+        <span style={{ fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {partnerName ? `${t.connStatus} ${partnerName}` : t.waiting}
+        </span>
         <span style={{fontSize: '24px', cursor: 'pointer'}} onClick={() => setShowSettings(true)}>⚙️</span>
       </div>
 
@@ -198,22 +167,20 @@ export default function App() {
         <div style={{width: '100%', textAlign: 'center'}}>
           <p style={{fontSize: '14px', color: '#666', marginTop: '20px'}}>{t.idLabel}</p>
           <div style={{fontSize: '32px', fontWeight: 'bold', letterSpacing: '6px', color: '#1A237E', margin: '15px 0'}}>{pairId}</div>
-          <button style={{backgroundColor: '#1565C0', color: 'white', padding: '10px', borderRadius: '10px', border: 'none', width: '65%', marginBottom: '20px', cursor: 'pointer', fontWeight: 'bold'}} onClick={copyToClipboard}>{t.copy}</button>
-          
+          <button style={{backgroundColor: '#1565C0', color: 'white', padding: '10px', borderRadius: '10px', border: 'none', width: '65%', marginBottom: '20px', fontWeight: 'bold'}} onClick={copyToClipboard}>{t.copy}</button>
           <button style={{...s.bigBtn, backgroundColor: '#4CAF50'}} onClick={() => handleSendMessage(t.well)}>{t.well}</button>
           <button style={{...s.bigBtn, backgroundColor: '#FF9800'}} onClick={() => handleSendMessage(t.unwell)}>{t.unwell}</button>
           <button style={{...s.bigBtn, backgroundColor: '#F44336'}} onClick={() => handleSendMessage(t.sos)}>{t.sos}</button>
-          
           {lastData.time && <p style={{marginTop: '15px', color: '#4E5754', fontWeight: 'bold'}}>{t.sentAt} {new Date(lastData.time).toLocaleString()}</p>}
         </div>
-) : (
-  <div style={{ ...s.card, marginTop: '20%' }}> {/* Добавили смещение вниз на 20% */}
-    <p style={{ color: '#666' }}>{t.receivedAt}</p>
-    <p style={{ fontSize: '18px', fontWeight: 'bold', margin: '20px 0' }}>[{lastData.text}]</p>
-    <p style={{ fontSize: '14px', color: '#666' }}>{t.timerLabel}</p>
-    <div style={{ fontSize: '44px', color: '#D32F2F', fontWeight: 'bold' }}>{timeDiff}</div>
-  </div>
-)}
+      ) : (
+        <div style={{ ...s.card, marginTop: '20%' }}>
+          <p style={{color: '#666'}}>{t.receivedAt}</p>
+          <p style={{fontSize: '18px', fontWeight: 'bold', margin: '20px 0'}}>[{lastData.text}]</p>
+          <p style={{fontSize: '14px', color: '#666'}}>{t.timerLabel}</p>
+          <div style={{fontSize: '44px', color: '#D32F2F', fontWeight: 'bold'}}>{timeDiff}</div>
+        </div>
+      )}
 
       {showSettings && (
         <div style={{position: 'fixed', top:0, left:0, width:'100%', height:'100%', backgroundColor:'#F0F2F5', zIndex:1000, display:'flex', flexDirection:'column', alignItems:'center', padding:'20px', boxSizing:'border-box'}}>
@@ -224,9 +191,25 @@ export default function App() {
           </div>
           <p style={{color: '#666'}}>{role === 'server' ? t.checkHour : t.waitHours}:</p>
           <input style={s.input} type="number" value={role==='server'?checkHour:waitHours} onChange={e => role==='server'?setCheckHour(e.target.value):setWaitHours(e.target.value)} />
-          <button style={{...s.bigBtn, backgroundColor: '#4CAF50'}} onClick={() => {
-            localStorage.setItem('lang', lang); localStorage.setItem('checkHour', checkHour); localStorage.setItem('waitHours', waitHours); setShowSettings(false);
-          }}>{t.save}</button>
+<button 
+  style={{...s.bigBtn, backgroundColor: '#4CAF50'}} 
+  onClick={async () => {
+    // 1. Сохраняем локально
+    localStorage.setItem('lang', lang); 
+    localStorage.setItem('checkHour', checkHour); 
+    localStorage.setItem('waitHours', waitHours);
+    
+    // 2. Отправляем в базу данных
+    await supabase.from('pairs').update({
+      check_hour: parseInt(checkHour),
+      wait_hours: parseInt(waitHours)
+    }).eq('pair_id', pairId);
+
+    setShowSettings(false);
+  }}
+>
+  {t.save}
+</button>
           <button style={{background:'none', border:'none', color:'#F44336', fontWeight:'bold', marginTop:'20px'}} onClick={() => {if(window.confirm(t.logout)) {localStorage.clear(); window.location.reload();}}}>{t.logout}</button>
           <p style={{marginTop: '20px', color: '#666', cursor: 'pointer'}} onClick={() => setShowSettings(false)}>{t.back}</p>
         </div>
