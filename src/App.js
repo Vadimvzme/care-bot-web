@@ -249,25 +249,62 @@ export default function App() {
   onClick={async () => {
     if(window.confirm(t.logout)) {
       if (pairId) {
-        // Определяем, какие поля зачистить в зависимости от роли
+        // 1. Получаем текущие данные пары, чтобы знать, кому слать уведомление
+        const { data: pair } = await supabase
+          .from('pairs')
+          .select('*')
+          .eq('pair_id', pairId)
+          .single();
+
+        let recipientId = null;
+        let notificationText = "";
+
+        // 2. Определяем, кто выходит и кого уведомлять
+        if (role === 'server') {
+          // Выходит Старший -> Уведомляем Родственника
+          recipientId = pair?.relative_chat_id;
+          notificationText = `⚠️ Внимание! Старший (${pair?.senior_name || 'Ваш подопечный'}) вышел из аккаунта. Уведомления о проверке приходить не будут.`;
+        } else {
+          // Выходит Родственник -> Уведомляем Старшего
+          recipientId = pair?.senior_chat_id;
+          notificationText = `⚠️ Внимание! Ваш родственник (${pair?.relative_name || 'Помощник'}) вышел из аккаунта.`;
+        }
+
+        // 3. Отправляем уведомление, если есть кому
+        if (recipientId) {
+          try {
+            await fetch(`https://api.telegram.org/bot8591945156:AAGrXSpXjfDnZyX3GF6Omngclwd8cROGhts/sendMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                chat_id: recipientId, 
+                text: notificationText 
+              })
+            });
+          } catch (e) {
+            console.error("Не удалось отправить уведомление о выходе:", e);
+          }
+        }
+
+        // 4. Очищаем поля в базе данных в зависимости от роли
         const clearData = role === 'server' 
           ? { senior_name: null, senior_chat_id: null } 
           : { relative_name: null, relative_chat_id: null };
 
-        // Обновляем строку, "стирая" себя из неё
-        const { data } = await supabase
+        const { data: updatedPair } = await supabase
           .from('pairs')
           .update(clearData)
           .eq('pair_id', pairId)
           .select()
           .single();
 
-        // Доп. логика: если после очистки оба участника пусты — удаляем строку совсем
-        if (data && !data.senior_chat_id && !data.relative_chat_id) {
+        // 5. Если строка стала полностью пустой — удаляем её
+        if (updatedPair && !updatedPair.senior_chat_id && !updatedPair.relative_chat_id) {
           await supabase.from('pairs').delete().eq('pair_id', pairId);
         }
       }
 
+      // 6. Сброс локальных данных и перезагрузка страницы
       localStorage.clear(); 
       window.location.reload();
     }
