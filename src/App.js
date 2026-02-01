@@ -80,101 +80,58 @@ export default function App() {
     if (sPairId && sRole) { setPairId(sPairId); setRole(sRole); setStep('work'); }
   }, []);
 
-  // --- ЦИКЛ ОБНОВЛЕНИЯ И ПРОВЕРКИ СВЯЗИ ---
   useEffect(() => {
     let interval;
     if (pairId && step === 'work') {
       const refresh = async () => {
-        // Используем maybeSingle() вместо single(), чтобы не было ошибки при пустой базе
         const { data } = await supabase.from('pairs').select('*').eq('pair_id', pairId).maybeSingle();
-        
-        // Логика для Родственника: если Старший удалил себя или строка исчезла совсем
         if (role === 'client') {
           if (!data || !data.senior_chat_id) {
-            console.log("Связь со Старшим потеряна!");
             setStep('lost_connection');
-            return; // Прекращаем выполнение, так как данных нет
+            return;
           }
         }
-
-        // Если данные есть, обновляем интерфейс
         if (data) {
           setPartnerName(role === 'client' ? data.senior_name : data.relative_name);
           setLastData({ text: data.last_message_text || '—', time: data.last_message_time });
           if (data.last_message_time) {
             const diff = new Date() - new Date(data.last_message_time);
-            const d = Math.floor(diff/86400000);
-            const h = Math.floor((diff%86400000)/3600000);
-            const m = Math.floor((diff%3600000)/60000);
+            const d = Math.floor(diff/86400000), h = Math.floor((diff%86400000)/3600000), m = Math.floor((diff%3600000)/60000);
             setTimeDiff(`${d}д ${h}ч ${m}м`);
           }
         }
       };
-      refresh(); 
-      interval = setInterval(refresh, 5000); // Проверка каждые 5 секунд
+      refresh(); interval = setInterval(refresh, 5000);
     }
     return () => clearInterval(interval);
   }, [pairId, step, role]);
 
-// --- УЛУЧШЕННАЯ ЛОГИКА ДЛЯ СТАРШЕГО ---
   const handleStartServer = async () => {
     if (!userName.trim()) return;
-
-    // Определяем ID: либо тот, что ввели (если восстанавливаем), либо новый случайный
-    const id = (isRestoring && inputCode.trim()) 
-      ? inputCode.trim().toUpperCase() 
-      : Math.random().toString(36).substring(2, 8).toUpperCase();
-    
-    // Пытаемся сохранить данные Старшего
-    const { data, error } = await supabase.from('pairs').upsert({ 
-      pair_id: id, 
-      senior_name: userName.toUpperCase(), 
-      senior_chat_id: tgUser?.id || null,
-      senior_tz_offset: Math.round(new Date().getTimezoneOffset() / -60)
-    }).select();
-
+    const id = (isRestoring && inputCode.trim()) ? inputCode.trim().toUpperCase() : Math.random().toString(36).substring(2, 8).toUpperCase();
+    const { error } = await supabase.from('pairs').upsert({ 
+      pair_id: id, senior_name: userName.toUpperCase(), 
+      senior_chat_id: tgUser?.id || null, senior_tz_offset: Math.round(new Date().getTimezoneOffset() / -60)
+    });
     if (!error) {
-      localStorage.setItem('pairId', id); 
-      localStorage.setItem('role', 'server');
-      setPairId(id); 
-      setRole('server'); 
-      setStep('work');
-      setIsRestoring(false); // Сбрасываем флаг восстановления
-    } else {
-      console.error("DB Error:", error);
-      alert(lang === 'ru' ? "Ошибка. Возможно, этот ID занят или неверный." : "Error. ID might be invalid.");
-    }
+      localStorage.setItem('pairId', id); localStorage.setItem('role', 'server');
+      setPairId(id); setRole('server'); setStep('work'); setIsRestoring(false);
+    } else { alert("Error"); }
   };
 
-  // --- УЛУЧШЕННАЯ ЛОГИКА ДЛЯ КЛИЕНТА (ВОССТАНОВЛЕНИЕ/ВХОД) ---
   const handleConnectClient = async () => {
     const code = inputCode.trim().toUpperCase();
     if (!code || !userName.trim()) return;
-
-    // Проверяем, существует ли пара
     const { data: existingPair } = await supabase.from('pairs').select('*').eq('pair_id', code).maybeSingle();
-
     if (existingPair) {
-      // Обновляем данные Родственника в этой строке
       const { error } = await supabase.from('pairs').update({ 
-        relative_name: userName.toUpperCase(), 
-        relative_chat_id: tgUser?.id || null,
-        is_connected: true 
+        relative_name: userName.toUpperCase(), relative_chat_id: tgUser?.id || null, is_connected: true 
       }).eq('pair_id', code);
-
       if (!error) {
-        localStorage.setItem('pairId', code); 
-        localStorage.setItem('role', 'client');
-        setPairId(code); 
-        setStep('work');
-      } else {
-        alert("Error connecting");
+        localStorage.setItem('pairId', code); localStorage.setItem('role', 'client');
+        setPairId(code); setStep('work');
       }
-    } else {
-      alert(lang === 'ru' ? "ID не найден. Попросите Старшего создать новый код." : "ID not found.");
-      // Если ID не найден, а родственник на экране "lost_connection", 
-      // возможно стоит дать ему возможность вернуться к выбору роли
-    }
+    } else { alert(lang === 'ru' ? "ID не найден" : "ID not found"); }
   };
 
   const handleSendMessage = async (text) => {
@@ -209,60 +166,25 @@ export default function App() {
       <h2 style={s.title}>{isRestoring ? t.restore : t.reg}</h2>
       <input style={s.input} placeholder={t.name} value={userName} onChange={e => setUserName(e.target.value.toUpperCase())} />
       {(role === 'client' || isRestoring) && <input style={s.input} placeholder={t.code} value={inputCode} onChange={e => setInputCode(e.target.value.toUpperCase())} />}
-<button 
-  style={{...s.bigBtn, backgroundColor: role==='server'?'#4CAF50':'#2196F3'}} 
-  onClick={role === 'server' ? handleStartServer : handleConnectClient}
->
-  {isRestoring ? t.enter : (role === 'server' ? t.continue : t.enter)}
-</button>
+      <button style={{...s.bigBtn, backgroundColor: role==='server'?'#4CAF50':'#2196F3'}} onClick={role === 'server' ? handleStartServer : handleConnectClient}>
+        {isRestoring ? t.enter : (role === 'server' ? t.continue : t.enter)}
+      </button>
       {!isRestoring && role === 'server' && <p style={{color: '#2196F3', cursor: 'pointer', marginTop: '20px'}} onClick={() => setIsRestoring(true)}>{"У МЕНЯ УЖЕ ЕСТЬ ID"}</p>}
       <p style={{color: '#666', cursor: 'pointer', marginTop: '20px'}} onClick={() => {setStep('choice'); setIsRestoring(false)}}>{t.back}</p>
     </div>
   );
 
-if (step === 'lost_connection') return (
-  <div style={{...s.container, backgroundColor: '#FFF0F0'}}> {/* Бледно-розовый фон всей страницы */}
-    <div style={{...s.card, border: '2px solid #F44336', backgroundColor: '#FFFFFF'}}> 
-      <h2 style={{color: '#D32F2F', fontSize: '24px'}}>{t.lostConnTitle}</h2>
-      <div style={{
-        margin: '20px 0', 
-        padding: '15px', 
-        backgroundColor: '#FFEBEE', 
-        borderRadius: '10px',
-        color: '#B71C1C',
-        fontWeight: '500',
-        lineHeight: '1.4'
-      }}>
-        {t.lostConnText}
+  if (step === 'lost_connection') return (
+    <div style={{...s.container, backgroundColor: '#FFF0F0'}}>
+      <div style={{...s.card, border: '2px solid #F44336', backgroundColor: '#FFFFFF'}}> 
+        <h2 style={{color: '#D32F2F', fontSize: '24px'}}>{t.lostConnTitle}</h2>
+        <div style={{margin: '20px 0', padding: '15px', backgroundColor: '#FFEBEE', borderRadius: '10px', color: '#B71C1C', fontWeight: '500', lineHeight: '1.4'}}>{t.lostConnText}</div>
+        <input style={{...s.input, borderColor: '#F44336'}} placeholder="XXXXXX" value={inputCode} onChange={e => setInputCode(e.target.value.toUpperCase())} />
+        <button style={{...s.bigBtn, backgroundColor: '#F44336'}} onClick={handleConnectClient}>{t.restoreBtn}</button>
+        <button style={{background: 'none', border: 'none', color: '#757575', marginTop: '20px', cursor: 'pointer', textDecoration: 'underline'}} onClick={() => { localStorage.clear(); window.location.reload(); }}>{t.back}</button>
       </div>
-      
-      <p style={{fontSize: '14px', color: '#666', marginBottom: '10px'}}>{t.code}:</p>
-      <input 
-        style={{...s.input, borderColor: '#F44336', backgroundColor: '#FFF'}} 
-        placeholder="XXXXXX" 
-        value={inputCode} 
-        onChange={e => setInputCode(e.target.value.toUpperCase())} 
-      />
-      
-      <button 
-        style={{...s.bigBtn, backgroundColor: '#F44336'}} 
-        onClick={handleConnectClient}
-      >
-        {t.restoreBtn}
-      </button>
-
-      <button 
-        style={{background: 'none', border: 'none', color: '#757575', marginTop: '20px', cursor: 'pointer', textDecoration: 'underline'}} 
-        onClick={() => {
-          localStorage.clear();
-          window.location.reload();
-        }}
-      >
-        {t.back} ({t.choice})
-      </button>
     </div>
-  </div>
-);
+  );
 
   return (
     <div style={s.container}>
@@ -301,20 +223,35 @@ if (step === 'lost_connection') return (
           </div>
           <p style={{color: '#666'}}>{role === 'server' ? t.checkHour : t.waitHours}:</p>
           <input style={s.input} type="number" value={role==='server'?checkHour:waitHours} onChange={e => role==='server'?setCheckHour(e.target.value):setWaitHours(e.target.value)} />
-          <button 
-            style={{...s.bigBtn, backgroundColor: '#4CAF50'}} 
-            onClick={async () => {
-              const tzOffset = Math.round(new Date().getTimezoneOffset() / -60);
-              localStorage.setItem('lang', lang); 
-              localStorage.setItem('checkHour', checkHour); 
-              localStorage.setItem('waitHours', waitHours);
-              await supabase.from('pairs').update({ check_hour: parseInt(checkHour), wait_hours: parseInt(waitHours), senior_tz_offset: tzOffset }).eq('pair_id', pairId);
-              setShowSettings(false);
-            }}
-          > {t.save} </button>
+          <button style={{...s.bigBtn, backgroundColor: '#4CAF50'}} onClick={async () => {
+            const tzOffset = Math.round(new Date().getTimezoneOffset() / -60);
+            localStorage.setItem('lang', lang); localStorage.setItem('checkHour', checkHour); localStorage.setItem('waitHours', waitHours);
+            await supabase.from('pairs').update({ check_hour: parseInt(checkHour), wait_hours: parseInt(waitHours), senior_tz_offset: tzOffset }).eq('pair_id', pairId);
+            setShowSettings(false);
+          }}>{t.save}</button>
 
-);
-
+          <button style={{background:'none', border:'none', color:'#F44336', fontWeight:'bold', marginTop:'30px', cursor:'pointer'}} onClick={async () => {
+            if(window.confirm(t.logout)) {
+              try {
+                if (pairId) {
+                  const { data: pair } = await supabase.from('pairs').select('*').eq('pair_id', pairId).single();
+                  const recipientId = role === 'server' ? pair?.relative_chat_id : pair?.senior_chat_id;
+                  if (recipientId) {
+                    const note = role === 'server' ? `⚠️ Старший (${pair?.senior_name}) вышел из аккаунта.` : `ℹ️ Родственник (${pair?.relative_name}) вышел.`;
+                    await fetch(`https://api.telegram.org/bot8591945156:AAGrXSpXjfDnZyX3GF6Omngclwd8cROGhts/sendMessage`, {
+                      method: 'POST', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ chat_id: recipientId, text: note })
+                    });
+                  }
+                  const clearData = role === 'server' ? { senior_name: null, senior_chat_id: null } : { relative_name: null, relative_chat_id: null };
+                  const { data: updated } = await supabase.from('pairs').update(clearData).eq('pair_id', pairId).select().single();
+                  if (updated && !updated.senior_chat_id && !updated.relative_chat_id) await supabase.from('pairs').delete().eq('pair_id', pairId);
+                }
+              } catch (e) { console.error(e); }
+              localStorage.clear(); window.location.reload();
+            }
+          }}>{t.logout}</button>
+          
           <p style={{marginTop: '20px', color: '#666', cursor: 'pointer'}} onClick={() => setShowSettings(false)}>{t.back}</p>
         </div>
       )}
