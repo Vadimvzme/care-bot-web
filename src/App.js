@@ -106,19 +106,15 @@ export default function App() {
     return () => clearInterval(interval);
   }, [pairId, step, role]);
 
-const handleStartServer = async () => {
-  if (!userName.trim()) return;
-
-  // Чистка: Если мы создаем НОВЫЙ код (не восстановление), удаляем старые записи этого пользователя
-  if (!isRestoring && tgUser?.id) {
-    await supabase.from('pairs').delete().eq('senior_chat_id', tgUser.id);
-  }
-
-  const id = (isRestoring && inputCode.trim()) 
-    ? inputCode.trim().toUpperCase() 
-    : Math.random().toString(36).substring(2, 8).toUpperCase();
-  
-  // Дальнейший код upsert без изменений...
+  const handleStartServer = async () => {
+    if (!userName.trim()) return;
+    if (!isRestoring && tgUser?.id) {
+      await supabase.from('pairs').delete().eq('senior_chat_id', tgUser.id);
+    }
+    const id = (isRestoring && inputCode.trim()) 
+      ? inputCode.trim().toUpperCase() 
+      : Math.random().toString(36).substring(2, 8).toUpperCase();
+    
     const { error } = await supabase.from('pairs').upsert({ 
       pair_id: id, senior_name: userName.toUpperCase(), 
       senior_chat_id: tgUser?.id || null, senior_tz_offset: Math.round(new Date().getTimezoneOffset() / -60)
@@ -132,16 +128,35 @@ const handleStartServer = async () => {
   const handleConnectClient = async () => {
     const code = inputCode.trim().toUpperCase();
     if (!code || !userName.trim()) return;
-    const { data: existingPair } = await supabase.from('pairs').select('*').eq('pair_id', code).maybeSingle();
-    if (existingPair) {
-      const { error } = await supabase.from('pairs').update({ 
-        relative_name: userName.toUpperCase(), relative_chat_id: tgUser?.id || null, is_connected: true 
-      }).eq('pair_id', code);
-      if (!error) {
-        localStorage.setItem('pairId', code); localStorage.setItem('role', 'client');
-        setPairId(code); setStep('work');
+
+    try {
+      // ОЧИСТКА ПРЕДЫДУЩИХ СТРОК РОДСТВЕННИКА
+      if (tgUser?.id) {
+        const { data: oldPairs } = await supabase.from('pairs').select('*').eq('relative_chat_id', tgUser.id);
+        if (oldPairs) {
+          for (const old of oldPairs) {
+            if (old.pair_id !== code) {
+              if (!old.senior_chat_id) {
+                await supabase.from('pairs').delete().eq('pair_id', old.pair_id);
+              } else {
+                await supabase.from('pairs').update({ relative_name: null, relative_chat_id: null, is_connected: false }).eq('pair_id', old.pair_id);
+              }
+            }
+          }
+        }
       }
-    } else { alert(lang === 'ru' ? "ID не найден" : "ID not found"); }
+
+      const { data: existingPair } = await supabase.from('pairs').select('*').eq('pair_id', code).maybeSingle();
+      if (existingPair) {
+        const { error } = await supabase.from('pairs').update({ 
+          relative_name: userName.toUpperCase(), relative_chat_id: tgUser?.id || null, is_connected: true 
+        }).eq('pair_id', code);
+        if (!error) {
+          localStorage.setItem('pairId', code); localStorage.setItem('role', 'client');
+          setPairId(code); setStep('work');
+        }
+      } else { alert(lang === 'ru' ? "ID не найден" : "ID not found"); }
+    } catch (e) { console.error(e); }
   };
 
   const handleSendMessage = async (text) => {
@@ -184,36 +199,22 @@ const handleStartServer = async () => {
     </div>
   );
 
-if (step === 'lost_connection') return (
+  if (step === 'lost_connection') return (
     <div style={{...s.container, backgroundColor: '#FFF0F0'}}>
       <div style={{...s.card, border: '2px solid #F44336', backgroundColor: '#FFFFFF'}}> 
         <h2 style={{color: '#D32F2F', fontSize: '24px'}}>{t.lostConnTitle}</h2>
         <div style={{margin: '20px 0', padding: '15px', backgroundColor: '#FFEBEE', borderRadius: '10px', color: '#B71C1C', fontWeight: '500', lineHeight: '1.4'}}>{t.lostConnText}</div>
         <input style={{...s.input, borderColor: '#F44336'}} placeholder="XXXXXX" value={inputCode} onChange={e => setInputCode(e.target.value.toUpperCase())} />
         <button style={{...s.bigBtn, backgroundColor: '#F44336'}} onClick={handleConnectClient}>{t.restoreBtn}</button>
-        
-        {/* ИСПРАВЛЕННАЯ КНОПКА НАЗАД */}
-        <button 
-          style={{background: 'none', border: 'none', color: '#757575', marginTop: '20px', cursor: 'pointer', textDecoration: 'underline'}} 
-          onClick={async () => {
+        <button style={{background: 'none', border: 'none', color: '#757575', marginTop: '20px', cursor: 'pointer', textDecoration: 'underline'}} onClick={async () => {
             if (pairId) {
-              // Зануляем данные родственника перед уходом
-              const { data: updated } = await supabase.from('pairs')
-                .update({ relative_name: null, relative_chat_id: null })
-                .eq('pair_id', pairId)
-                .select().single();
-              
-              // Если строка стала совсем пустой (Старшего там уже нет), удаляем её полностью
+              const { data: updated } = await supabase.from('pairs').update({ relative_name: null, relative_chat_id: null }).eq('pair_id', pairId).select().single();
               if (updated && !updated.senior_chat_id && !updated.relative_chat_id) {
                 await supabase.from('pairs').delete().eq('pair_id', pairId);
               }
             }
-            localStorage.clear(); 
-            window.location.reload(); 
-          }}
-        >
-          {t.back} ({t.choice})
-        </button>
+            localStorage.clear(); window.location.reload();
+          }}>{t.back} ({t.choice})</button>
       </div>
     </div>
   );
@@ -262,51 +263,33 @@ if (step === 'lost_connection') return (
             setShowSettings(false);
           }}>{t.save}</button>
 
-<button style={{background:'none', border:'none', color:'#F44336', fontWeight:'bold', marginTop:'30px', cursor:'pointer'}} onClick={async () => {
-  if(window.confirm(t.logout)) {
-    try {
-      if (pairId) {
-        // 1. Сначала берем данные для уведомления
-        const { data: pair } = await supabase.from('pairs').select('*').eq('pair_id', pairId).maybeSingle();
-        
-        if (pair) {
-          const recipientId = role === 'server' ? pair.relative_chat_id : pair.senior_chat_id;
-          const myName = role === 'server' ? pair.senior_name : pair.relative_name;
-
-          // 2. Отправляем в Telegram и ЖДЕМ (await)
-          if (recipientId) {
-            const note = role === 'server' 
-              ? `🔔 ВНИМАНИЕ: Старший (${myName}) вышел из системы! Мониторинг приостановлен.` 
-              : `ℹ️ Родственник (${myName}) вышел из системы.`;
-            
-            await fetch(`https://api.telegram.org/bot8591945156:AAGrXSpXjfDnZyX3GF6Omngclwd8cROGhts/sendMessage`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ chat_id: recipientId, text: note, disable_notification: false }) // false гарантирует звук
-            });
-          }
-
-          // 3. Обновляем базу
-          const clearData = role === 'server' 
-            ? { senior_name: null, senior_chat_id: null } 
-            : { relative_name: null, relative_chat_id: null };
-
-          const { data: updated } = await supabase.from('pairs').update(clearData).eq('pair_id', pairId).select().single();
-
-          // 4. Если строка стала пустой - удаляем
-          if (updated && !updated.senior_chat_id && !updated.relative_chat_id) {
-            await supabase.from('pairs').delete().eq('pair_id', pairId);
-          }
-        }
-      }
-    } catch (e) { console.error(e); }
-    
-    // 5. Очистка и выход
-    localStorage.clear(); 
-    window.location.reload();
-  }
-}}>{t.logout}</button>
-          
+          <button style={{background:'none', border:'none', color:'#F44336', fontWeight:'bold', marginTop:'30px', cursor:'pointer'}} onClick={async () => {
+            if(window.confirm(t.logout)) {
+              try {
+                if (pairId) {
+                  const { data: pair } = await supabase.from('pairs').select('*').eq('pair_id', pairId).maybeSingle();
+                  if (pair) {
+                    const recipientId = role === 'server' ? pair.relative_chat_id : pair.senior_chat_id;
+                    const myName = role === 'server' ? pair.senior_name : pair.relative_name;
+                    if (recipientId) {
+                      const note = role === 'server' ? `🔔 ВНИМАНИЕ: Старший (${myName}) вышел из системы! Мониторинг приостановлен.` : `ℹ️ Родственник (${myName}) вышел из системы.`;
+                      await fetch(`https://api.telegram.org/bot8591945156:AAGrXSpXjfDnZyX3GF6Omngclwd8cROGhts/sendMessage`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ chat_id: recipientId, text: note, disable_notification: false })
+                      });
+                    }
+                    const clearData = role === 'server' ? { senior_name: null, senior_chat_id: null } : { relative_name: null, relative_chat_id: null };
+                    const { data: updated } = await supabase.from('pairs').update(clearData).eq('pair_id', pairId).select().single();
+                    if (updated && !updated.senior_chat_id && !updated.relative_chat_id) {
+                      await supabase.from('pairs').delete().eq('pair_id', pairId);
+                    }
+                  }
+                }
+              } catch (e) { console.error(e); }
+              localStorage.clear(); window.location.reload();
+            }
+          }}>{t.logout}</button>
           <p style={{marginTop: '20px', color: '#666', cursor: 'pointer'}} onClick={() => setShowSettings(false)}>{t.back}</p>
         </div>
       )}
