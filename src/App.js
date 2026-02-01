@@ -213,7 +213,26 @@ export default function App() {
 >
   {t.save}
 </button>
-          <button style={{background:'none', border:'none', color:'#F44336', fontWeight:'bold', marginTop:'20px'}} onClick={() => {if(window.confirm(t.logout)) {localStorage.clear(); window.location.reload();}}}>{t.logout}</button>
+<button 
+  style={{background:'none', border:'none', color:'#F44336', fontWeight:'bold', marginTop:'20px'}} 
+  onClick={async () => {
+    if(window.confirm(t.logout)) {
+      // 1. Удаляем запись из базы данных перед выходом
+      if (pairId) {
+        await supabase
+          .from('pairs')
+          .delete()
+          .eq('pair_id', pairId);
+      }
+
+      // 2. Очищаем локальную память и перезагружаем
+      localStorage.clear(); 
+      window.location.reload();
+    }
+  }}
+>
+  {t.logout}
+</button>
           <p style={{marginTop: '20px', color: '#666', cursor: 'pointer'}} onClick={() => setShowSettings(false)}>{t.back}</p>
         </div>
       )}
