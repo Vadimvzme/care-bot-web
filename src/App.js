@@ -194,15 +194,18 @@ export default function App() {
 <button 
   style={{...s.bigBtn, backgroundColor: '#4CAF50'}} 
   onClick={async () => {
-    // 1. Сохраняем локально
+    // Определяем смещение в часах (например, для МСК это будет -3)
+    // getTimezoneOffset возвращает минуты, поэтому делим на -60
+    const tzOffset = Math.round(new Date().getTimezoneOffset() / -60);
+
     localStorage.setItem('lang', lang); 
     localStorage.setItem('checkHour', checkHour); 
     localStorage.setItem('waitHours', waitHours);
     
-    // 2. Отправляем в базу данных
     await supabase.from('pairs').update({
       check_hour: parseInt(checkHour),
-      wait_hours: parseInt(waitHours)
+      wait_hours: parseInt(waitHours),
+      senior_tz_offset: tzOffset // Сохраняем часовой пояс
     }).eq('pair_id', pairId);
 
     setShowSettings(false);
