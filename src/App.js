@@ -94,24 +94,55 @@ export default function App() {
     return () => clearInterval(interval);
   }, [pairId, step, role]);
 
+// --- ЛОГИКА ДЛЯ СТАРШЕГО (Создание или Восстановление) ---
   const handleStartServer = async () => {
     if (!userName.trim()) return;
-    const id = Math.random().toString(36).substring(2, 8).toUpperCase();
-    await supabase.from('pairs').upsert([{ pair_id: id, senior_name: userName.toUpperCase(), senior_chat_id: tgUser?.id || null }]);
-    localStorage.setItem('pairId', id); localStorage.setItem('role', 'server');
-    setPairId(id); setRole('server'); setStep('work');
+
+    // Если мы восстанавливаем (isRestoring), используем введенный inputCode, иначе генерируем новый
+    const id = isRestoring ? inputCode.trim().toUpperCase() : Math.random().toString(36).substring(2, 8).toUpperCase();
+    
+    // Используем upsert: если ID есть — обновит данные Старшего, если нет — создаст строку
+    const { data, error } = await supabase.from('pairs').upsert({ 
+      pair_id: id, 
+      senior_name: userName.toUpperCase(), 
+      senior_chat_id: tgUser?.id || null,
+      senior_tz_offset: Math.round(new Date().getTimezoneOffset() / -60)
+    }).select();
+
+    if (!error) {
+      localStorage.setItem('pairId', id); 
+      localStorage.setItem('role', 'server');
+      setPairId(id); 
+      setRole('server'); 
+      setStep('work');
+    } else {
+      alert(lang === 'ru' ? "Ошибка при регистрации" : "Registration error");
+    }
   };
 
+  // --- ЛОГИКА ДЛЯ КЛИЕНТА (Подключение) ---
   const handleConnectClient = async () => {
     const code = inputCode.trim().toUpperCase();
-    if (!code) return;
-    const { data } = await supabase.from('pairs').update({ 
-      ...(role === 'client' ? { relative_name: userName.toUpperCase(), is_connected: true, relative_chat_id: tgUser?.id } : { senior_name: userName.toUpperCase(), senior_chat_id: tgUser?.id }) 
-    }).eq('pair_id', code).select();
-    if (data?.length > 0) {
-      localStorage.setItem('pairId', code); localStorage.setItem('role', role);
-      setPairId(code); setStep('work');
-    } else { alert(lang === 'ru' ? "ID не найден" : "ID not found"); }
+    if (!code || !userName.trim()) return;
+
+    // Сначала проверяем, существует ли такой ID вообще
+    const { data: existingPair } = await supabase.from('pairs').select('*').eq('pair_id', code).single();
+
+    if (existingPair) {
+      // Если ID найден, просто "вписываем" туда данные клиента
+      await supabase.from('pairs').update({ 
+        relative_name: userName.toUpperCase(), 
+        relative_chat_id: tgUser?.id || null,
+        is_connected: true 
+      }).eq('pair_id', code);
+
+      localStorage.setItem('pairId', code); 
+      localStorage.setItem('role', 'client');
+      setPairId(code); 
+      setStep('work');
+    } else {
+      alert(lang === 'ru' ? "ID не найден. Сначала Старший должен создать код." : "ID not found. Senior must create code first.");
+    }
   };
 
   const handleSendMessage = async (text) => {
@@ -217,15 +248,26 @@ export default function App() {
   style={{background:'none', border:'none', color:'#F44336', fontWeight:'bold', marginTop:'20px'}} 
   onClick={async () => {
     if(window.confirm(t.logout)) {
-      // 1. Удаляем запись из базы данных перед выходом
       if (pairId) {
-        await supabase
+        // Определяем, какие поля зачистить в зависимости от роли
+        const clearData = role === 'server' 
+          ? { senior_name: null, senior_chat_id: null } 
+          : { relative_name: null, relative_chat_id: null };
+
+        // Обновляем строку, "стирая" себя из неё
+        const { data } = await supabase
           .from('pairs')
-          .delete()
-          .eq('pair_id', pairId);
+          .update(clearData)
+          .eq('pair_id', pairId)
+          .select()
+          .single();
+
+        // Доп. логика: если после очистки оба участника пусты — удаляем строку совсем
+        if (data && !data.senior_chat_id && !data.relative_chat_id) {
+          await supabase.from('pairs').delete().eq('pair_id', pairId);
+        }
       }
 
-      // 2. Очищаем локальную память и перезагружаем
       localStorage.clear(); 
       window.location.reload();
     }
