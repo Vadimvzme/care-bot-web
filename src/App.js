@@ -116,39 +116,65 @@ export default function App() {
     return () => clearInterval(interval);
   }, [pairId, step, role]);
 
+// --- УЛУЧШЕННАЯ ЛОГИКА ДЛЯ СТАРШЕГО ---
   const handleStartServer = async () => {
     if (!userName.trim()) return;
-    const id = isRestoring ? inputCode.trim().toUpperCase() : Math.random().toString(36).substring(2, 8).toUpperCase();
+
+    // Определяем ID: либо тот, что ввели (если восстанавливаем), либо новый случайный
+    const id = (isRestoring && inputCode.trim()) 
+      ? inputCode.trim().toUpperCase() 
+      : Math.random().toString(36).substring(2, 8).toUpperCase();
     
-    const { error } = await supabase.from('pairs').upsert({ 
+    // Пытаемся сохранить данные Старшего
+    const { data, error } = await supabase.from('pairs').upsert({ 
       pair_id: id, 
       senior_name: userName.toUpperCase(), 
       senior_chat_id: tgUser?.id || null,
       senior_tz_offset: Math.round(new Date().getTimezoneOffset() / -60)
-    });
+    }).select();
 
     if (!error) {
-      localStorage.setItem('pairId', id); localStorage.setItem('role', 'server');
-      setPairId(id); setRole('server'); setStep('work');
-    } else { alert(t.regError || "Error"); }
+      localStorage.setItem('pairId', id); 
+      localStorage.setItem('role', 'server');
+      setPairId(id); 
+      setRole('server'); 
+      setStep('work');
+      setIsRestoring(false); // Сбрасываем флаг восстановления
+    } else {
+      console.error("DB Error:", error);
+      alert(lang === 'ru' ? "Ошибка. Возможно, этот ID занят или неверный." : "Error. ID might be invalid.");
+    }
   };
 
+  // --- УЛУЧШЕННАЯ ЛОГИКА ДЛЯ КЛИЕНТА (ВОССТАНОВЛЕНИЕ/ВХОД) ---
   const handleConnectClient = async () => {
     const code = inputCode.trim().toUpperCase();
     if (!code || !userName.trim()) return;
 
-    const { data: existingPair } = await supabase.from('pairs').select('*').eq('pair_id', code).single();
+    // Проверяем, существует ли пара
+    const { data: existingPair } = await supabase.from('pairs').select('*').eq('pair_id', code).maybeSingle();
 
     if (existingPair) {
-      await supabase.from('pairs').update({ 
+      // Обновляем данные Родственника в этой строке
+      const { error } = await supabase.from('pairs').update({ 
         relative_name: userName.toUpperCase(), 
         relative_chat_id: tgUser?.id || null,
         is_connected: true 
       }).eq('pair_id', code);
 
-      localStorage.setItem('pairId', code); localStorage.setItem('role', 'client');
-      setPairId(code); setStep('work');
-    } else { alert(lang === 'ru' ? "ID не найден" : "ID not found"); }
+      if (!error) {
+        localStorage.setItem('pairId', code); 
+        localStorage.setItem('role', 'client');
+        setPairId(code); 
+        setStep('work');
+      } else {
+        alert("Error connecting");
+      }
+    } else {
+      alert(lang === 'ru' ? "ID не найден. Попросите Старшего создать новый код." : "ID not found.");
+      // Если ID не найден, а родственник на экране "lost_connection", 
+      // возможно стоит дать ему возможность вернуться к выбору роли
+    }
   };
 
   const handleSendMessage = async (text) => {
@@ -183,9 +209,12 @@ export default function App() {
       <h2 style={s.title}>{isRestoring ? t.restore : t.reg}</h2>
       <input style={s.input} placeholder={t.name} value={userName} onChange={e => setUserName(e.target.value.toUpperCase())} />
       {(role === 'client' || isRestoring) && <input style={s.input} placeholder={t.code} value={inputCode} onChange={e => setInputCode(e.target.value.toUpperCase())} />}
-      <button style={{...s.bigBtn, backgroundColor: role==='server'?'#4CAF50':'#2196F3'}} onClick={role==='server' && !isRestoring ? handleStartServer : handleConnectClient}>
-        {isRestoring ? t.enter : (role === 'server' ? t.continue : t.enter)}
-      </button>
+<button 
+  style={{...s.bigBtn, backgroundColor: role==='server'?'#4CAF50':'#2196F3'}} 
+  onClick={role === 'server' ? handleStartServer : handleConnectClient}
+>
+  {isRestoring ? t.enter : (role === 'server' ? t.continue : t.enter)}
+</button>
       {!isRestoring && role === 'server' && <p style={{color: '#2196F3', cursor: 'pointer', marginTop: '20px'}} onClick={() => setIsRestoring(true)}>{"У МЕНЯ УЖЕ ЕСТЬ ID"}</p>}
       <p style={{color: '#666', cursor: 'pointer', marginTop: '20px'}} onClick={() => {setStep('choice'); setIsRestoring(false)}}>{t.back}</p>
     </div>
