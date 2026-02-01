@@ -191,18 +191,49 @@ export default function App() {
     </div>
   );
 
-  if (step === 'lost_connection') return (
-    <div style={s.container}>
-      <div style={s.card}>
-        <h2 style={{color: '#F44336'}}>{t.lostConnTitle}</h2>
-        <p style={{margin: '20px 0', lineHeight: '1.5', color: '#333'}}>{t.lostConnText}</p>
-        <input style={s.input} placeholder={t.code} value={inputCode} onChange={e => setInputCode(e.target.value.toUpperCase())} />
-        <button style={{...s.bigBtn, backgroundColor: '#2196F3'}} onClick={handleConnectClient}>{t.restoreBtn}</button>
-        <button style={{background: 'none', border: 'none', color: '#666', marginTop: '20px', cursor: 'pointer', textDecoration: 'underline'}} 
-          onClick={() => { localStorage.clear(); window.location.reload(); }}>{t.back}</button>
+if (step === 'lost_connection') return (
+  <div style={{...s.container, backgroundColor: '#FFF0F0'}}> {/* Бледно-розовый фон всей страницы */}
+    <div style={{...s.card, border: '2px solid #F44336', backgroundColor: '#FFFFFF'}}> 
+      <h2 style={{color: '#D32F2F', fontSize: '24px'}}>{t.lostConnTitle}</h2>
+      <div style={{
+        margin: '20px 0', 
+        padding: '15px', 
+        backgroundColor: '#FFEBEE', 
+        borderRadius: '10px',
+        color: '#B71C1C',
+        fontWeight: '500',
+        lineHeight: '1.4'
+      }}>
+        {t.lostConnText}
       </div>
+      
+      <p style={{fontSize: '14px', color: '#666', marginBottom: '10px'}}>{t.code}:</p>
+      <input 
+        style={{...s.input, borderColor: '#F44336', backgroundColor: '#FFF'}} 
+        placeholder="XXXXXX" 
+        value={inputCode} 
+        onChange={e => setInputCode(e.target.value.toUpperCase())} 
+      />
+      
+      <button 
+        style={{...s.bigBtn, backgroundColor: '#F44336'}} 
+        onClick={handleConnectClient}
+      >
+        {t.restoreBtn}
+      </button>
+
+      <button 
+        style={{background: 'none', border: 'none', color: '#757575', marginTop: '20px', cursor: 'pointer', textDecoration: 'underline'}} 
+        onClick={() => {
+          localStorage.clear();
+          window.location.reload();
+        }}
+      >
+        {t.back} ({t.choice})
+      </button>
     </div>
-  );
+  </div>
+);
 
   return (
     <div style={s.container}>
@@ -253,62 +284,8 @@ export default function App() {
             }}
           > {t.save} </button>
 
-<button 
-  style={{background:'none', border:'none', color:'#F44336', fontWeight:'bold', marginTop:'20px'}} 
-  onClick={async () => {
-    if(window.confirm(t.logout)) {
-      try {
-        if (pairId) {
-          // 1. Получаем свежие данные
-          const { data: pair } = await supabase.from('pairs').select('*').eq('pair_id', pairId).single();
+);
 
-          if (pair) {
-            const recipientId = role === 'server' ? pair.relative_chat_id : pair.senior_chat_id;
-            const myName = role === 'server' ? pair.senior_name : pair.relative_name;
-
-            // 2. Сначала отправляем уведомление в Телеграм
-            if (recipientId) {
-              const note = role === 'server' 
-                ? `⚠️ Старший (${myName}) вышел из аккаунта. Мониторинг приостановлен.` 
-                : `ℹ️ Родственник (${myName}) вышел из аккаунта.`;
-              
-              await fetch(`https://api.telegram.org/bot8591945156:AAGrXSpXjfDnZyX3GF6Omngclwd8cROGhts/sendMessage`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ chat_id: recipientId, text: note })
-              });
-            }
-
-            // 3. Частичная зачистка (ВАЖНО: используем update, а не delete)
-            const clearData = role === 'server' 
-              ? { senior_name: null, senior_chat_id: null } 
-              : { relative_name: null, relative_chat_id: null };
-
-            const { data: updated } = await supabase
-              .from('pairs')
-              .update(clearData)
-              .eq('pair_id', pairId)
-              .select()
-              .single();
-
-            // 4. Удаляем строку ТОЛЬКО если она стала совсем пустой
-            if (updated && !updated.senior_chat_id && !updated.relative_chat_id) {
-              await supabase.from('pairs').delete().eq('pair_id', pairId);
-            }
-          }
-        }
-      } catch (e) {
-        console.error("Ошибка при выходе:", e);
-      }
-
-      // 5. Только теперь выходим локально
-      localStorage.clear(); 
-      window.location.reload();
-    }
-  }}
->
-  {t.logout}
-</button>
           <p style={{marginTop: '20px', color: '#666', cursor: 'pointer'}} onClick={() => setShowSettings(false)}>{t.back}</p>
         </div>
       )}
