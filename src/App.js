@@ -48,11 +48,6 @@ const translations = {
 
 export default function App() {
   const [tgUser, setTgUser] = useState(null);
-  useEffect(() => {
-    const tg = window.Telegram?.WebApp;
-    if (tg) { tg.ready(); tg.expand(); setTgUser(tg.initDataUnsafe?.user); }
-  }, []);
-
   const [lang, setLang] = useState('ru');
   const t = translations[lang] || translations.ru;
   const [role, setRole] = useState(null);
@@ -63,23 +58,38 @@ export default function App() {
   const [isRestoring, setIsRestoring] = useState(false);
   const [partnerName, setPartnerName] = useState('');
   const [showSettings, setShowSettings] = useState(false);
+  const [showErrorModal, setShowErrorModal] = useState(false);
   const [checkHour, setCheckHour] = useState('21');
   const [waitHours, setWaitHours] = useState('48');
   const [lastData, setLastData] = useState({ text: '—', time: null });
   const [timeDiff, setTimeDiff] = useState('0д 0ч 0м');
 
+  // Инициализация Telegram WebApp и локальных настроек
   useEffect(() => {
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+      tg.ready();
+      tg.expand();
+      setTgUser(tg.initDataUnsafe?.user);
+    }
+
     const sLang = localStorage.getItem('lang');
     const sCheck = localStorage.getItem('checkHour');
     const sWait = localStorage.getItem('waitHours');
     const sPairId = localStorage.getItem('pairId');
     const sRole = localStorage.getItem('role');
+
     if (sLang) setLang(sLang);
     if (sCheck) setCheckHour(sCheck);
     if (sWait) setWaitHours(sWait);
-    if (sPairId && sRole) { setPairId(sPairId); setRole(sRole); setStep('work'); }
+    if (sPairId && sRole) {
+      setPairId(sPairId);
+      setRole(sRole);
+      setStep('work');
+    }
   }, []);
 
+  // Цикл обновления данных из базы
   useEffect(() => {
     let interval;
     if (pairId && step === 'work') {
@@ -96,15 +106,35 @@ export default function App() {
           setLastData({ text: data.last_message_text || '—', time: data.last_message_time });
           if (data.last_message_time) {
             const diff = new Date() - new Date(data.last_message_time);
-            const d = Math.floor(diff/86400000), h = Math.floor((diff%86400000)/3600000), m = Math.floor((diff%3600000)/60000);
+            const d = Math.floor(diff / 86400000);
+            const h = Math.floor((diff % 86400000) / 3600000);
+            const m = Math.floor((diff % 3600000) / 60000);
             setTimeDiff(`${d}д ${h}ч ${m}м`);
           }
         }
       };
-      refresh(); interval = setInterval(refresh, 5000);
+      refresh();
+      interval = setInterval(refresh, 5000);
     }
     return () => clearInterval(interval);
   }, [pairId, step, role]);
+
+  // Общий сброс состояния и очистка базы
+  const handleFullReset = async () => {
+    if (pairId) {
+      const { data: updated } = await supabase.from('pairs')
+        .update({ relative_name: null, relative_chat_id: null })
+        .eq('pair_id', pairId)
+        .select()
+        .single();
+      
+      if (updated && !updated.senior_chat_id && !updated.relative_chat_id) {
+        await supabase.from('pairs').delete().eq('pair_id', pairId);
+      }
+    }
+    localStorage.clear();
+    window.location.reload();
+  };
 
   const handleStartServer = async () => {
     if (!userName.trim()) return;
@@ -116,12 +146,19 @@ export default function App() {
       : Math.random().toString(36).substring(2, 8).toUpperCase();
     
     const { error } = await supabase.from('pairs').upsert({ 
-      pair_id: id, senior_name: userName.toUpperCase(), 
-      senior_chat_id: tgUser?.id || null, senior_tz_offset: Math.round(new Date().getTimezoneOffset() / -60)
+      pair_id: id, 
+      senior_name: userName.toUpperCase(), 
+      senior_chat_id: tgUser?.id || null, 
+      senior_tz_offset: Math.round(new Date().getTimezoneOffset() / -60)
     });
+
     if (!error) {
-      localStorage.setItem('pairId', id); localStorage.setItem('role', 'server');
-      setPairId(id); setRole('server'); setStep('work'); setIsRestoring(false);
+      localStorage.setItem('pairId', id);
+      localStorage.setItem('role', 'server');
+      setPairId(id);
+      setRole('server');
+      setStep('work');
+      setIsRestoring(false);
     } else { alert("Error"); }
   };
 
@@ -130,7 +167,6 @@ export default function App() {
     if (!code || !userName.trim()) return;
 
     try {
-      // ОЧИСТКА ПРЕДЫДУЩИХ СТРОК РОДСТВЕННИКА
       if (tgUser?.id) {
         const { data: oldPairs } = await supabase.from('pairs').select('*').eq('relative_chat_id', tgUser.id);
         if (oldPairs) {
@@ -147,28 +183,41 @@ export default function App() {
       }
 
       const { data: existingPair } = await supabase.from('pairs').select('*').eq('pair_id', code).maybeSingle();
+      
       if (existingPair) {
         const { error } = await supabase.from('pairs').update({ 
-          relative_name: userName.toUpperCase(), relative_chat_id: tgUser?.id || null, is_connected: true 
+          relative_name: userName.toUpperCase(), 
+          relative_chat_id: tgUser?.id || null, 
+          is_connected: true 
         }).eq('pair_id', code);
+
         if (!error) {
-          localStorage.setItem('pairId', code); localStorage.setItem('role', 'client');
-          setPairId(code); setStep('work');
+          localStorage.setItem('pairId', code);
+          localStorage.setItem('role', 'client');
+          setPairId(code);
+          setStep('work');
+          setShowErrorModal(false);
         }
-      } else { alert(lang === 'ru' ? "ID не найден" : "ID not found"); }
+      } else {
+        setShowErrorModal(true);
+      }
     } catch (e) { console.error(e); }
   };
 
   const handleSendMessage = async (text) => {
     const now = new Date().toISOString();
-    await supabase.from('pairs').update({
-      last_message_text: text, last_message_time: now,
-      ...(role === 'server' ? { senior_chat_id: tgUser?.id } : { relative_chat_id: tgUser?.id })
+    await supabase.from('pairs').update({ 
+      last_message_text: text, 
+      last_message_time: now, 
+      ...(role === 'server' ? { senior_chat_id: tgUser?.id } : { relative_chat_id: tgUser?.id }) 
     }).eq('pair_id', pairId);
     setLastData({ text: text, time: now });
   };
 
-  const copyToClipboard = () => { navigator.clipboard.writeText(pairId); alert(t.copySuccess); };
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(pairId);
+    alert(t.copySuccess);
+  };
 
   const s = {
     container: { fontFamily: 'sans-serif', padding: '20px', backgroundColor: '#F8F9FA', minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', boxSizing: 'border-box' },
@@ -206,15 +255,7 @@ export default function App() {
         <div style={{margin: '20px 0', padding: '15px', backgroundColor: '#FFEBEE', borderRadius: '10px', color: '#B71C1C', fontWeight: '500', lineHeight: '1.4'}}>{t.lostConnText}</div>
         <input style={{...s.input, borderColor: '#F44336'}} placeholder="XXXXXX" value={inputCode} onChange={e => setInputCode(e.target.value.toUpperCase())} />
         <button style={{...s.bigBtn, backgroundColor: '#F44336'}} onClick={handleConnectClient}>{t.restoreBtn}</button>
-        <button style={{background: 'none', border: 'none', color: '#757575', marginTop: '20px', cursor: 'pointer', textDecoration: 'underline'}} onClick={async () => {
-            if (pairId) {
-              const { data: updated } = await supabase.from('pairs').update({ relative_name: null, relative_chat_id: null }).eq('pair_id', pairId).select().single();
-              if (updated && !updated.senior_chat_id && !updated.relative_chat_id) {
-                await supabase.from('pairs').delete().eq('pair_id', pairId);
-              }
-            }
-            localStorage.clear(); window.location.reload();
-          }}>{t.back} ({t.choice})</button>
+        <button style={{background: 'none', border: 'none', color: '#757575', marginTop: '20px', cursor: 'pointer', textDecoration: 'underline'}} onClick={handleFullReset}>{t.back} ({t.choice})</button>
       </div>
     </div>
   );
@@ -273,16 +314,16 @@ export default function App() {
                     const myName = role === 'server' ? pair.senior_name : pair.relative_name;
                     if (recipientId) {
                       const note = role === 'server' ? `🔔 ВНИМАНИЕ: Старший (${myName}) вышел из системы! Мониторинг приостановлен.` : `ℹ️ Родственник (${myName}) вышел из системы.`;
-                      await fetch(`https://api.telegram.org/bot8591945156:AAGrXSpXjfDnZyX3GF6Omngclwd8cROGhts/sendMessage`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ chat_id: recipientId, text: note, disable_notification: false })
+                      await fetch(`https://api.telegram.org/bot8591945156:AAGrXSpXjfDnZyX3GF6Omngclwd8cROGhts/sendMessage`, { 
+                        method: 'POST', 
+                        headers: { 'Content-Type': 'application/json' }, 
+                        body: JSON.stringify({ chat_id: recipientId, text: note, disable_notification: false }) 
                       });
                     }
                     const clearData = role === 'server' ? { senior_name: null, senior_chat_id: null } : { relative_name: null, relative_chat_id: null };
                     const { data: updated } = await supabase.from('pairs').update(clearData).eq('pair_id', pairId).select().single();
-                    if (updated && !updated.senior_chat_id && !updated.relative_chat_id) {
-                      await supabase.from('pairs').delete().eq('pair_id', pairId);
+                    if (updated && !updated.senior_chat_id && !updated.relative_chat_id) { 
+                      await supabase.from('pairs').delete().eq('pair_id', pairId); 
                     }
                   }
                 }
@@ -291,6 +332,23 @@ export default function App() {
             }
           }}>{t.logout}</button>
           <p style={{marginTop: '20px', color: '#666', cursor: 'pointer'}} onClick={() => setShowSettings(false)}>{t.back}</p>
+        </div>
+      )}
+
+      {/* МОДАЛЬНОЕ ОКНО ОШИБКИ */}
+      {showErrorModal && (
+        <div style={{position: 'fixed', top:0, left:0, width:'100%', height:'100%', backgroundColor:'rgba(0,0,0,0.7)', zIndex:2000, display:'flex', justifyContent:'center', alignItems:'center', padding:'20px', boxSizing:'border-box'}}>
+          <div style={{backgroundColor:'white', padding:'30px', borderRadius:'20px', textAlign:'center', width:'100%', maxWidth:'400px'}}>
+            <h2 style={{color: '#D32F2F', marginBottom:'15px'}}>{lang === 'ru' ? "ID НЕ НАЙДЕН" : "ID NOT FOUND"}</h2>
+            <p style={{color: '#555', lineHeight:'1.5', marginBottom:'25px'}}>
+              {lang === 'ru' 
+                ? "Связь невозможна: старый ID удален. Пожалуйста, возьмите новый ID у Старшего пользователя." 
+                : "Connection impossible: old ID deleted. Please get a new ID from the Senior user."}
+            </p>
+            <button style={{...s.bigBtn, backgroundColor: '#2196F3', padding:'20px'}} onClick={handleFullReset}>
+              {lang === 'ru' ? "ВЕРНУТЬСЯ В НАЧАЛО" : "BACK TO START"}
+            </button>
+          </div>
         </div>
       )}
     </div>
